@@ -1,12 +1,15 @@
 if not game:IsLoaded() then
-    game.Loaded:Wait()
+	game.Loaded:Wait()
 end
+
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 local currentTarget = nil
 local MAX_RANGE = 3000
 local whitelist = {} -- [player] = true
+local lastLowHPFire = 0
+local LOW_HP_DELAY = 1.0 -- wait 1 second when target is at 1 HP
 
 -- ==================== TARGET GUI ====================
 local screenGui = Instance.new("ScreenGui")
@@ -46,7 +49,6 @@ local function updateGUI()
 		title.TextColor3 = Color3.fromRGB(255, 80, 80)
 	end
 end
--- =============================================
 
 -- ==================== WHITELIST GUI ====================
 local wlGui = Instance.new("ScreenGui")
@@ -80,11 +82,7 @@ scrolling.Size = UDim2.new(1, -10, 1, -35)
 scrolling.Position = UDim2.new(0, 5, 0, 30)
 scrolling.BackgroundTransparency = 1
 scrolling.BorderSizePixel = 0
-scrolling.ScrollBarThickness = 8
-scrolling.ScrollBarImageColor3 = Color3.fromRGB(120, 120, 120)
-scrolling.ScrollBarImageTransparency = 0.3
-scrolling.ScrollingDirection = Enum.ScrollingDirection.Y
-scrolling.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrolling.ScrollBarThickness = 4
 scrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
 scrolling.Parent = wlFrame
 
@@ -93,18 +91,17 @@ listLayout.Padding = UDim.new(0, 4)
 listLayout.Parent = scrolling
 
 local function refreshWhitelistGUI()
-	-- Clear existing buttons
 	for _, child in ipairs(scrolling:GetChildren()) do
 		if child:IsA("TextButton") then
 			child:Destroy()
 		end
 	end
 
-	-- Add buttons for each player
+	local y = 0
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1, -10, 0, 26)
+			btn.Size = UDim2.new(1, -6, 0, 26)
 			btn.BackgroundColor3 = whitelist[player] and Color3.fromRGB(0, 120, 60) or Color3.fromRGB(40, 40, 40)
 			btn.BackgroundTransparency = 0.2
 			btn.BorderSizePixel = 0
@@ -112,7 +109,6 @@ local function refreshWhitelistGUI()
 			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 			btn.TextSize = 13
 			btn.Font = Enum.Font.Gotham
-			btn.TextTruncate = Enum.TextTruncate.AtEnd
 			btn.Parent = scrolling
 
 			local btnCorner = Instance.new("UICorner")
@@ -128,8 +124,11 @@ local function refreshWhitelistGUI()
 					btn.BackgroundColor3 = Color3.fromRGB(0, 120, 60)
 				end
 			end)
+
+			y = y + 30
 		end
 	end
+	scrolling.CanvasSize = UDim2.new(0, 0, 0, y)
 end
 
 Players.PlayerAdded:Connect(function()
@@ -143,54 +142,8 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 refreshWhitelistGUI()
+
 -- =============================================
-
--- Check if player has force field
-local function hasForceField(character)
-	if not character then return false end
-	
-	-- Check for ForceField instance
-	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("ForceField") then
-			return true
-		end
-	end
-	
-	-- Check for common force field names in character or parts
-	local forceFieldNames = {"ForceField", "SpawnShield", "Shield", "InvincibilityShield"}
-	
-	for _, part in ipairs(character:GetChildren()) do
-		if part:IsA("BasePart") then
-			for _, child in ipairs(part:GetChildren()) do
-				if child:IsA("ForceField") then
-					return true
-				end
-			end
-		end
-	end
-	
-	return false
-end
-
--- Check if player is alive
-local function isPlayerAlive(player)
-	if not player then return false end
-	
-	local character = player.Character
-	if not character then return false end
-	
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return false end
-	
-	-- Check if health is above 0 and humanoid isn't dead
-	if humanoid.Health <= 0 then return false end
-	
-	-- Check if humanoid state is dead
-	if humanoid:GetState() == Enum.HumanoidStateType.Dead then return false end
-	
-	return true
-end
-
 local function hasWallBetween(fromPos, toPos)
 	local direction = toPos - fromPos
 	local distance = direction.Magnitude
@@ -201,7 +154,6 @@ local function hasWallBetween(fromPos, toPos)
 	params.FilterDescendantsInstances = {LocalPlayer.Character}
 
 	local result = workspace:Raycast(fromPos, direction.Unit * distance, params)
-
 	if result then
 		local hitChar = result.Instance:FindFirstAncestorOfClass("Model")
 		if hitChar and Players:GetPlayerFromCharacter(hitChar) then
@@ -224,18 +176,11 @@ local function getClosestPlayer()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character and not whitelist[player] then
-			-- Skip dead players
-			if not isPlayerAlive(player) then continue end
-			
-			-- Skip players with force field
-			if hasForceField(player.Character) then continue end
-			
 			local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
 
 			if hrp and humanoid and humanoid.Health > 0 then
 				local distance = (myHRP.Position - hrp.Position).Magnitude
-
 				if distance <= MAX_RANGE and distance < shortestDistance then
 					if not hasWallBetween(myHRP.Position, hrp.Position) then
 						shortestDistance = distance
@@ -264,7 +209,7 @@ end
 
 -- Main loop
 while true do
-	task.wait(0.03)
+	task.wait(0.01)
 
 	local character = LocalPlayer.Character
 	if not character then continue end
@@ -286,18 +231,19 @@ while true do
 
 	if not currentTarget or not currentTarget.Character then continue end
 
-	-- Double check if target is still valid (alive and no force field)
-	if not isPlayerAlive(currentTarget) or hasForceField(currentTarget.Character) then
-		currentTarget = nil
-		updateGUI()
-		continue
-	end
-
 	local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then
 		currentTarget = nil
 		updateGUI()
 		continue
+	end
+
+	-- When target is at 1 HP (knocked), wait 1 second before firing again
+	if humanoid.Health <= 1 then
+		if tick() - lastLowHPFire < LOW_HP_DELAY then
+			continue
+		end
+		lastLowHPFire = tick()
 	end
 
 	local targetPart

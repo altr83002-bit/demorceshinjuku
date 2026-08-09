@@ -195,7 +195,8 @@ local function getClosestPlayer()
 end
 
 local function tryReload(tool)
-	if tool.Name ~= "Nambu" and tool.Name ~= "P9" and tool.Name ~= "MP5" then return end
+	-- Only reload on Nambu
+	if tool.Name ~= "Nambu" then return end
 
 	local reloadEvent = tool:FindFirstChild("ReloadEvent")
 		or tool:FindFirstChild("Reload")
@@ -207,9 +208,9 @@ local function tryReload(tool)
 	end
 end
 
--- Main loop (0 delay)
+-- Main loop (lowest possible delay)
 while true do
-	task.wait() -- almost 0 delay
+	task.wait()
 
 	local character = LocalPlayer.Character
 	if not character then continue end

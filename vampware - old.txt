@@ -2,6 +2,7 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
+-- SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -63,7 +64,6 @@ local function updateWhitelistForPlayer(plr)
 	end
 end
 
--- helpers
 local function clearHighlight()
 	if highlightTween then
 		highlightTween:Cancel()
@@ -75,7 +75,7 @@ local function clearHighlight()
 	end
 end
 
--- client sided headless
+-- Headless
 local headlessEnabled = false
 local function applyHeadless(char)
 	local head = char:FindFirstChild("Head")
@@ -98,7 +98,7 @@ player.CharacterAdded:Connect(function()
 	applyCosmetics()
 end)
 
--- raycast
+-- Raycast
 local LOSParams = RaycastParams.new()
 LOSParams.FilterType = Enum.RaycastFilterType.Blacklist
 LOSParams.IgnoreWater = true
@@ -113,7 +113,6 @@ player.CharacterAdded:Connect(function()
 	updateLOSFilter()
 end)
 
--- under check
 local function isTargetUnderLocalPlayer(char)
 	local head = char:FindFirstChild("Head")
 	local myChar = player.Character
@@ -123,7 +122,7 @@ local function isTargetUnderLocalPlayer(char)
 	return head.Position.Y < myRoot.Position.Y
 end
 
--- VISUALS (SKY ONLY)
+-- SKY
 local purpleSkyEnabled = false
 local redDemonSkyEnabled = false
 local heavenSkyEnabled = false
@@ -182,8 +181,6 @@ local function setHeavenSky(state)
 	sky.SkyboxUp = "rbxassetid://159454288"
 	sky.StarCount = 0
 end
-
--- SKY PERSISTENCE
 local function enforceSky()
 	if not purpleSkyEnabled and not redDemonSkyEnabled and not heavenSkyEnabled then return end
 	for _,obj in ipairs(Lighting:GetChildren()) do
@@ -191,45 +188,42 @@ local function enforceSky()
 			obj:Destroy()
 		end
 	end
-	if purpleSkyEnabled then
-		setPurpleSky(true)
-	elseif redDemonSkyEnabled then
-		setRedDemonSky(true)
-	elseif heavenSkyEnabled then
-		setHeavenSky(true)
-	end
+	if purpleSkyEnabled then setPurpleSky(true)
+	elseif redDemonSkyEnabled then setRedDemonSky(true)
+	elseif heavenSkyEnabled then setHeavenSky(true) end
 end
 Lighting.ChildAdded:Connect(function(c)
-	if c:IsA("Sky") then
-		task.defer(enforceSky)
-	end
+	if c:IsA("Sky") then task.defer(enforceSky) end
 end)
 Lighting.ChildRemoved:Connect(function(c)
-	if c:IsA("Sky") then
-		task.defer(enforceSky)
-	end
+	if c:IsA("Sky") then task.defer(enforceSky) end
 end)
 
 -- ITEM ESP
--- Guns only
 local weapons = {
-	{display = "MP5", keywords = {"mp5", "smg"}, color = Color3.new(1,1,0)},
-	{display = "Mossberg", keywords = {"mossberg", "shotgun"}, color = Color3.new(1,0,1)},
-	{display = "P9", keywords = {"p9", "pistol", "p-9", "9mm"}, color = Color3.new(0,1,1)},
-	{display = "Nambu", keywords = {"nambu", "type14", "type 14", "nambu type"}, color = Color3.new(1,0.5,0)},
-	{display = "Howa", keywords = {"howa", "rifle"}, color = Color3.new(1,0.5,0)},
+	{display = "MP5", keywords = {"mp5", "smg"}},
+	{display = "Mossberg", keywords = {"mossberg", "shotgun"}},
+	{display = "P9", keywords = {"p9", "pistol", "p-9", "9mm"}},
+	{display = "Nambu", keywords = {"nambu", "type14", "type 14", "nambu type"}},
+	{display = "Howa", keywords = {"howa", "rifle"}},
+	{display = ".38 Ammo", keywords = {".38", "38 ammo", "38box", "38_box"}},
+	{display = "7.62 Ammo", keywords = {"7.62", "762", "7.62 ammo", "762 ammo"}},
+	{display = "9mm Ammo", keywords = {"9mm", "9 mm", "9mm ammo"}},
+	{display = "Fishing Rod", keywords = {"fishing", "rod", "fishing rod"}},
 }
+
 local mapESPEnabled = true
 local playerESPEnabled = true
 local espToggles = {}
 local billboards = {}
 local lastAddedTime = 0
-local addedDebounce = 0.1 -- very tight for instant feel
+local addedDebounce = 0.1
+local MAX_BILLBOARDS = 300
+
 for _, w in ipairs(weapons) do
 	espToggles[w.display] = true
 end
-local MAX_BILLBOARDS = 300
--- Skip shop/display items
+
 local function isShopItem(obj)
 	local p = obj.Parent
 	while p do
@@ -243,65 +237,113 @@ local function isShopItem(obj)
 	end
 	return false
 end
+
 local function getBestPart(obj)
 	if obj.PrimaryPart then return obj.PrimaryPart end
 	return obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart", true)
 end
-local function createBillboard(item, name, color)
+
+local function getAmmo(obj)
+	local names = {"Ammo", "AmmoCount", "Bullets", "BulletCount", "Rounds", "Clip", "Magazine", "AmmoValue"}
+	for _, n in ipairs(names) do
+		local v = obj:FindFirstChild(n)
+		if v and (v:IsA("IntValue") or v:IsA("NumberValue")) then
+			return tostring(v.Value)
+		end
+	end
+	for _, n in ipairs(names) do
+		local attr = obj:GetAttribute(n)
+		if attr ~= nil then
+			return tostring(attr)
+		end
+	end
+	return nil
+end
+
+local function createBillboard(item, name)
 	if not item:IsDescendantOf(Workspace) then return end
 	if isShopItem(item) then return end
 	if #billboards >= MAX_BILLBOARDS then return end
+
 	local part = getBestPart(item)
 	if not part then return end
+
 	local existing = item:FindFirstChild("ItemESP")
 	if existing then existing:Destroy() end
+
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "ItemESP"
 	bb.Adornee = part
-	bb.Size = UDim2.new(0, 160, 0, 60)
-	bb.StudsOffset = Vector3.new(0, 3.2, 0)
+	bb.Size = UDim2.new(0, 80, 0, 36)
+	bb.StudsOffset = Vector3.new(0, 2.6, 0)
 	bb.AlwaysOnTop = true
 	bb.MaxDistance = 15000
 	bb.Parent = item
+
 	local nameLbl = Instance.new("TextLabel")
-	nameLbl.Size = UDim2.new(1,0,0.6,0)
-	nameLbl.BackgroundTransparency = 0.5
-	nameLbl.BackgroundColor3 = Color3.new(0,0,0)
+	nameLbl.Size = UDim2.new(1, 0, 0.55, 0)
+	nameLbl.BackgroundTransparency = 1
 	nameLbl.Text = name
-	nameLbl.TextColor3 = color
+	nameLbl.TextColor3 = Color3.fromRGB(0, 0, 0)
 	nameLbl.TextScaled = true
-	nameLbl.Font = Enum.Font.Oswald
-	nameLbl.TextStrokeTransparency = 0.6
-	nameLbl.TextStrokeColor3 = Color3.new(0,0,0)
+	nameLbl.Font = Enum.Font.GothamBold
+	nameLbl.TextStrokeTransparency = 0.4
+	nameLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	nameLbl.Parent = bb
-	Instance.new("UICorner", nameLbl).CornerRadius = UDim.new(0,6)
-	local distLbl = Instance.new("TextLabel")
-	distLbl.Size = UDim2.new(1,0,0.4,0)
-	distLbl.Position = UDim2.new(0,0,0.6,0)
-	distLbl.BackgroundTransparency = 1
-	distLbl.TextColor3 = Color3.new(1,1,1)
-	distLbl.TextScaled = true
-	distLbl.Font = Enum.Font.Gotham
-	distLbl.TextStrokeTransparency = 0.5
-	distLbl.TextStrokeColor3 = Color3.new(0,0,0)
-	distLbl.Parent = bb
-	billboards[item] = {bb = bb, dist = distLbl, part = part, enabled = espToggles[name] and true}
+
+	local ammoLbl = Instance.new("TextLabel")
+	ammoLbl.Size = UDim2.new(1, 0, 0.45, 0)
+	ammoLbl.Position = UDim2.new(0, 0, 0.55, 0)
+	ammoLbl.BackgroundTransparency = 1
+	ammoLbl.Text = ""
+	ammoLbl.TextColor3 = Color3.fromRGB(40, 40, 40)
+	ammoLbl.TextScaled = true
+	ammoLbl.Font = Enum.Font.Gotham
+	ammoLbl.TextStrokeTransparency = 0.5
+	ammoLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	ammoLbl.Parent = bb
+
+	-- Slower black → grey fade
+	local fadeInfo = TweenInfo.new(2.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+	local fadeTween = TweenService:Create(nameLbl, fadeInfo, {
+		TextColor3 = Color3.fromRGB(150, 150, 150)
+	})
+	fadeTween:Play()
+
+	local ammoFade = TweenService:Create(ammoLbl, fadeInfo, {
+		TextColor3 = Color3.fromRGB(130, 130, 130)
+	})
+	ammoFade:Play()
+
+	billboards[item] = {
+		bb = bb,
+		part = part,
+		enabled = espToggles[name] and true,
+		name = name,
+		label = nameLbl,
+		ammoLabel = ammoLbl,
+		tween = fadeTween,
+		ammoTween = ammoFade,
+		item = item
+	}
 	bb.Enabled = billboards[item].enabled
 end
+
 local function tryTag(obj)
 	if not (obj:IsA("Tool") or obj:IsA("Model")) then return end
 	if isShopItem(obj) then return end
+
 	local n = obj.Name:lower()
 	for _, w in ipairs(weapons) do
 		for _, kw in ipairs(w.keywords) do
 			if n:find(kw, 1, true) then
-				createBillboard(obj, w.display, w.color)
+				createBillboard(obj, w.display)
 				return
 			end
 		end
 	end
 end
--- Lightweight instant rescan on drop (only players + child)
+
 local function instantGunCheck()
 	if not playerESPEnabled then return end
 	for _, plr in ipairs(Players:GetPlayers()) do
@@ -319,51 +361,54 @@ local function instantGunCheck()
 		end
 	end
 end
--- Instant drop detection + zero-delay force rescan
+
 Workspace.DescendantAdded:Connect(function(child)
 	local t = tick()
 	if t - lastAddedTime < addedDebounce then return end
 	lastAddedTime = t
+
 	tryTag(child)
 	if child:IsA("Model") or child:IsA("Folder") or child:IsA("Tool") then
 		for _, sub in ipairs(child:GetDescendants()) do
 			tryTag(sub)
 		end
 	end
-	-- Zero delay: instant check when gun dropped
 	instantGunCheck()
 end)
+
 Workspace.DescendantRemoving:Connect(function(obj)
-	billboards[obj] = nil
+	if billboards[obj] then
+		if billboards[obj].tween then billboards[obj].tween:Cancel() end
+		if billboards[obj].ammoTween then billboards[obj].ammoTween:Cancel() end
+		billboards[obj] = nil
+	end
 end)
--- Distance updater
+
 RunService.Heartbeat:Connect(function()
-	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
 	for item, data in pairs(billboards) do
-		if not item.Parent or not data.part.Parent or not data.bb.Parent then
+		if not item.Parent or not data.part or not data.part.Parent or not data.bb or not data.bb.Parent then
+			if data.tween then data.tween:Cancel() end
+			if data.ammoTween then data.ammoTween:Cancel() end
+			if data.bb then data.bb:Destroy() end
 			billboards[item] = nil
-			continue
-		end
-		if data.enabled then
-			local studs = math.floor((hrp.Position - data.part.Position).Magnitude)
-			data.dist.Text = studs .. " studs"
-			data.dist.TextColor3 = studs < 300 and Color3.new(0,1,0) or studs < 1000 and Color3.new(1,1,0) or Color3.new(1,0.3,0.3)
+		else
+			if data.ammoLabel then
+				local ammo = getAmmo(item)
+				data.ammoLabel.Text = ammo and ("Ammo: " .. ammo) or ""
+			end
 		end
 	end
 end)
--- Periodic very fast scan (1 second) - only players (no lag)
+
 task.spawn(function()
 	while true do
 		if playerESPEnabled then
 			instantGunCheck()
 		end
 		if mapESPEnabled then
-			-- Very light map check: only check recent changes via cache or skip heavy scan
-			-- Full map only every 12s to avoid lag
 			task.wait(12)
 			if mapESPEnabled then
-				for _, obj in ipairs(Workspace:GetChildren()) do -- only direct children, fast
+				for _, obj in ipairs(Workspace:GetChildren()) do
 					tryTag(obj)
 				end
 			end
@@ -377,77 +422,76 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "v4mpl0ck"
 gui.ResetOnSpawn = false
 gui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+
 local main = Instance.new("Frame",gui)
 main.Size = UDim2.fromOffset(320,560)
 main.Position = UDim2.fromOffset(20,200)
 main.BackgroundColor3 = Color3.fromRGB(14,14,14)
 main.Active = true
 main.Draggable = true
-local mainCorner = Instance.new("UICorner", main)
-mainCorner.CornerRadius = UDim.new(0,10)
+Instance.new("UICorner", main).CornerRadius = UDim.new(0,10)
+
 local top = Instance.new("Frame",main)
 top.Size = UDim2.new(1,0,0,36)
 top.BackgroundColor3 = Color3.fromRGB(18,18,18)
-local topCorner = Instance.new("UICorner", top)
-topCorner.CornerRadius = UDim.new(0,10)
-local titleIcon = Instance.new("ImageLabel", top)
-titleIcon.Size = UDim2.fromOffset(18,18)
-titleIcon.Position = UDim2.fromOffset(10,9)
-titleIcon.BackgroundTransparency = 1
-titleIcon.Image = "rbxasset://textures/ui/Settings/MenuBarAssets/Menu.png"
+Instance.new("UICorner", top).CornerRadius = UDim.new(0,10)
+
 local title = Instance.new("TextLabel",top)
 title.Size = UDim2.new(1,-10,1,0)
-title.Position = UDim2.fromOffset(34,0)
+title.Position = UDim2.fromOffset(12,0)
 title.BackgroundTransparency = 1
 title.Text = "v4mpl0ck v1"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextColor3 = Color3.fromRGB(255,255,255)
+
 local sidebar = Instance.new("Frame",main)
 sidebar.Position = UDim2.fromOffset(0,36)
 sidebar.Size = UDim2.fromOffset(80,524)
 sidebar.BackgroundColor3 = Color3.fromRGB(17,17,17)
+
 local content = Instance.new("Frame",main)
 content.Position = UDim2.fromOffset(80,36)
 content.Size = UDim2.new(1,-80,1,-36)
 content.BackgroundColor3 = Color3.fromRGB(14,14,14)
-local function makeSideButton(text,y,icon)
+
+local function makeSideButton(text,y)
 	local b = Instance.new("TextButton",sidebar)
 	b.Size = UDim2.new(1,0,0,34)
 	b.Position = UDim2.fromOffset(0,y)
-	b.Text = " "..text
+	b.Text = "  "..text
 	b.Font = Enum.Font.Gotham
 	b.TextSize = 13
 	b.TextXAlignment = Enum.TextXAlignment.Left
 	b.TextColor3 = Color3.fromRGB(220,220,220)
 	b.BackgroundColor3 = Color3.fromRGB(17,17,17)
 	b.AutoButtonColor = false
-	local img = Instance.new("ImageLabel", b)
-	img.Size = UDim2.fromOffset(16,16)
-	img.Position = UDim2.fromOffset(8,9)
-	img.BackgroundTransparency = 1
-	img.Image = icon
 	local line = Instance.new("Frame",b)
 	line.Size = UDim2.fromOffset(3,34)
 	line.BackgroundColor3 = Color3.fromRGB(170,0,255)
 	line.Visible = false
 	return b,line
 end
-local aimTab, aimLine = makeSideButton("AIM",6,"rbxasset://textures/ui/Settings/MenuBarAssets/Search.png")
-local miscTab, miscLine = makeSideButton("MISC",44,"rbxasset://textures/ui/Settings/MenuBarAssets/More.png")
-local visualsTab, visualsLine = makeSideButton("VISUALS",82,"rbxasset://textures/ui/Settings/MenuBarAssets/Settings.png")
+
+local aimTab, aimLine = makeSideButton("AIM",6)
+local miscTab, miscLine = makeSideButton("MISC",44)
+local visualsTab, visualsLine = makeSideButton("VISUALS",82)
+
 local aimPage = Instance.new("Frame",content)
 aimPage.Size = UDim2.new(1,0,1,0)
 aimPage.BackgroundTransparency = 1
+
 local miscPage = Instance.new("Frame",content)
 miscPage.Size = UDim2.new(1,0,1,0)
 miscPage.BackgroundTransparency = 1
 miscPage.Visible = false
+
 local visualsPage = Instance.new("Frame",content)
 visualsPage.Size = UDim2.new(1,0,1,0)
 visualsPage.BackgroundTransparency = 1
 visualsPage.Visible = false
+
 local function makeButton(parent,text,y)
 	local b = Instance.new("TextButton",parent)
 	b.Size = UDim2.new(1,-30,0,32)
@@ -463,17 +507,20 @@ local function makeButton(parent,text,y)
 	s.Enabled = false
 	return b,s
 end
+
 local enableBtn, enableStroke = makeButton(aimPage,"Enabled: OFF",20)
 local partBtn, partStroke = makeButton(aimPage,"Lock: Head",62)
 local autoBtn, autoStroke = makeButton(miscPage,"Auto Lock: OFF",20)
 local triggerBtn, triggerStroke = makeButton(miscPage,"Trigger Bot: OFF",62)
 local rmbBtn, rmbStroke = makeButton(miscPage,"Right Click Lock: OFF",104)
 local headlessBtn, headlessStroke = makeButton(miscPage,"Headless (Client): OFF",460)
+
 local skyBtn, skyStroke = makeButton(visualsPage,"Purple Sky: OFF",20)
 local redSkyBtn, redSkyStroke = makeButton(visualsPage,"Red Demon Sky: OFF",62)
 local heavenSkyBtn, heavenSkyStroke = makeButton(visualsPage,"Heaven Sky: OFF",104)
 local mapESPBtn, mapESPStroke = makeButton(visualsPage,"Map ESP: ON",146)
 local playerESPBtn, playerESPStroke = makeButton(visualsPage,"Player ESP: ON",188)
+
 local weaponButtons = {}
 local yPos = 230
 for _, w in ipairs(weapons) do
@@ -492,6 +539,7 @@ wlBox.TextColor3 = Color3.fromRGB(255,255,255)
 wlBox.Font = Enum.Font.Gotham
 wlBox.TextSize = 12
 wlBox.ClearTextOnFocus = false
+
 local wlAdd = Instance.new("TextButton", miscPage)
 wlAdd.Size = UDim2.new(1,-30,0,30)
 wlAdd.Position = UDim2.fromOffset(15,182)
@@ -500,6 +548,7 @@ wlAdd.BackgroundColor3 = Color3.fromRGB(22,22,22)
 wlAdd.TextColor3 = Color3.fromRGB(255,255,255)
 wlAdd.Font = Enum.Font.Gotham
 wlAdd.TextSize = 12
+
 local wlList = Instance.new("ScrollingFrame", miscPage)
 wlList.Size = UDim2.new(1,-30,0,160)
 wlList.Position = UDim2.fromOffset(15,218)
@@ -508,6 +557,7 @@ wlList.ScrollBarImageTransparency = 0.2
 wlList.BorderSizePixel = 0
 local wlLayout = Instance.new("UIListLayout", wlList)
 wlLayout.Padding = UDim.new(0,6)
+
 local wlSelectedLabel = Instance.new("TextLabel", miscPage)
 wlSelectedLabel.Size = UDim2.new(1,-30,0,18)
 wlSelectedLabel.Position = UDim2.fromOffset(15,388)
@@ -517,6 +567,7 @@ wlSelectedLabel.Font = Enum.Font.GothamBold
 wlSelectedLabel.TextSize = 12
 wlSelectedLabel.TextXAlignment = Enum.TextXAlignment.Left
 wlSelectedLabel.TextColor3 = Color3.fromRGB(200,200,200)
+
 local wlSelectedList = Instance.new("ScrollingFrame", miscPage)
 wlSelectedList.Size = UDim2.new(1,-30,0,60)
 wlSelectedList.Position = UDim2.fromOffset(15,408)
@@ -526,7 +577,6 @@ wlSelectedList.BorderSizePixel = 0
 local wlSelectedLayout = Instance.new("UIListLayout", wlSelectedList)
 wlSelectedLayout.Padding = UDim.new(0,4)
 
--- UI logic
 local function setTab(tab)
 	aimPage.Visible = tab=="aim"
 	miscPage.Visible = tab=="misc"
@@ -539,6 +589,7 @@ aimTab.MouseButton1Click:Connect(function() setTab("aim") end)
 miscTab.MouseButton1Click:Connect(function() setTab("misc") end)
 visualsTab.MouseButton1Click:Connect(function() setTab("visuals") end)
 setTab("aim")
+
 local function refreshUI()
 	enableBtn.Text = "Enabled: "..(enabled and "ON" or "OFF")
 	partBtn.Text = "Lock: "..(lockPartName=="Head" and "Head" or "Root")
@@ -563,12 +614,13 @@ local function refreshUI()
 	playerESPStroke.Enabled = playerESPEnabled
 	for _, w in ipairs(weapons) do
 		local data = weaponButtons[w.display]
-		data.btn.Text = w.display .. " ESP: "..(espToggles[w.display] and "ON" or "OFF")
-		data.stroke.Enabled = espToggles[w.display]
+		if data then
+			data.btn.Text = w.display .. " ESP: "..(espToggles[w.display] and "ON" or "OFF")
+			data.stroke.Enabled = espToggles[w.display]
+		end
 	end
 end
 
--- whitelist lists
 local function rebuildWhitelistedList()
 	for _,c in ipairs(wlSelectedList:GetChildren()) do
 		if c:IsA("TextLabel") then c:Destroy() end
@@ -587,6 +639,7 @@ local function rebuildWhitelistedList()
 	task.wait()
 	wlSelectedList.CanvasSize = UDim2.new(0,0,0,wlSelectedLayout.AbsoluteContentSize.Y+4)
 end
+
 local function rebuildWhitelistPlayerList()
 	for _,c in ipairs(wlList:GetChildren()) do
 		if c:IsA("Frame") then c:Destroy() end
@@ -596,23 +649,16 @@ local function rebuildWhitelistPlayerList()
 		row.Size = UDim2.new(1,-6,0,32)
 		row.BackgroundColor3 = Color3.fromRGB(22,22,22)
 		row.BorderSizePixel = 0
-		local img = Instance.new("ImageLabel", row)
-		img.Size = UDim2.fromOffset(24,24)
-		img.Position = UDim2.fromOffset(4,4)
-		img.BackgroundTransparency = 1
-		task.spawn(function()
-			local content = Players:GetUserThumbnailAsync( plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48 )
-			img.Image = content
-		end)
+
 		local btn = Instance.new("TextButton", row)
-		btn.Size = UDim2.new(1,-34,1,0)
-		btn.Position = UDim2.fromOffset(34,0)
+		btn.Size = UDim2.new(1,0,1,0)
 		btn.BackgroundTransparency = 1
 		btn.TextXAlignment = Enum.TextXAlignment.Left
-		btn.Text = plr.Name
+		btn.Text = "  "..plr.Name
 		btn.Font = Enum.Font.Gotham
 		btn.TextSize = 12
 		btn.TextColor3 = Color3.fromRGB(255,255,255)
+
 		btn.MouseButton1Click:Connect(function()
 			if Whitelist[plr.Name] then
 				Whitelist[plr.Name] = nil
@@ -629,7 +675,7 @@ local function rebuildWhitelistPlayerList()
 	wlList.CanvasSize = UDim2.new(0,0,0,wlLayout.AbsoluteContentSize.Y+6)
 end
 
--- button actions
+-- Buttons
 enableBtn.MouseButton1Click:Connect(function()
 	enabled = not enabled
 	lockedPart = nil
@@ -688,9 +734,7 @@ wlAdd.MouseButton1Click:Connect(function()
 			Whitelist[name] = true
 		end
 		local plr = Players:FindFirstChild(name)
-		if plr then
-			updateWhitelistForPlayer(plr)
-		end
+		if plr then updateWhitelistForPlayer(plr) end
 		rebuildWhitelistedList()
 		lockedPart = nil
 		clearHighlight()
@@ -705,21 +749,24 @@ playerESPBtn.MouseButton1Click:Connect(function()
 	playerESPEnabled = not playerESPEnabled
 	refreshUI()
 end)
+
 for _, w in ipairs(weapons) do
 	local data = weaponButtons[w.display]
-	data.btn.MouseButton1Click:Connect(function()
-		espToggles[w.display] = not espToggles[w.display]
-		for _, bbData in pairs(billboards) do
-			if bbData.bb:FindFirstChildOfClass("TextLabel").Text == w.display then
-				bbData.enabled = espToggles[w.display]
-				bbData.bb.Enabled = espToggles[w.display]
+	if data then
+		data.btn.MouseButton1Click:Connect(function()
+			espToggles[w.display] = not espToggles[w.display]
+			for _, bbData in pairs(billboards) do
+				if bbData.name == w.display then
+					bbData.enabled = espToggles[w.display]
+					bbData.bb.Enabled = espToggles[w.display]
+				end
 			end
-		end
-		refreshUI()
-	end)
+			refreshUI()
+		end)
+	end
 end
 
--- input
+-- Input
 UIS.InputBegan:Connect(function(input,gp)
 	if gp then return end
 	if input.KeyCode == aimKey then
@@ -755,7 +802,7 @@ UIS.InputEnded:Connect(function(input)
 	end
 end)
 
--- targeting
+-- Targeting
 local function isTargetValid(part)
 	if not part or not part.Parent then return false end
 	local plr = Players:GetPlayerFromCharacter(part.Parent)
@@ -763,6 +810,7 @@ local function isTargetValid(part)
 	local hum = part.Parent:FindFirstChild("Humanoid")
 	return hum and hum.Health > 0
 end
+
 local function getClosestTarget()
 	local closest
 	local shortest = fovRadius
@@ -772,10 +820,8 @@ local function getClosestTarget()
 			local hum = char:FindFirstChild("Humanoid")
 			if hum and hum.Health > 0 then
 				local effectivePartName = lockPartName
-				if lockPartName == "Head" then
-					if isTargetUnderLocalPlayer(char) then
-						effectivePartName = "HumanoidRootPart"
-					end
+				if lockPartName == "Head" and isTargetUnderLocalPlayer(char) then
+					effectivePartName = "HumanoidRootPart"
 				end
 				local part = char:FindFirstChild(effectivePartName)
 				if part then
@@ -793,6 +839,7 @@ local function getClosestTarget()
 	end
 	return closest
 end
+
 local function hasLineOfSight(targetPart)
 	if not targetPart then return false end
 	local origin = camera.CFrame.Position
@@ -802,7 +849,6 @@ local function hasLineOfSight(targetPart)
 	return r.Instance and r.Instance:IsDescendantOf(targetPart.Parent)
 end
 
--- highlight
 local function applyHighlight(char)
 	clearHighlight()
 	local h = Instance.new("Highlight")
@@ -812,11 +858,10 @@ local function applyHighlight(char)
 	h.OutlineColor = Color3.fromRGB(170,0,255)
 	h.Parent = char
 	currentHighlight = h
-	highlightTween = TweenService:Create( h, TweenInfo.new(0.7,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut,-1,true), {OutlineColor = Color3.fromRGB(0,0,0)} )
+	highlightTween = TweenService:Create(h, TweenInfo.new(0.7,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut,-1,true), {OutlineColor = Color3.fromRGB(0,0,0)})
 	highlightTween:Play()
 end
 
--- trigger
 local function tryTrigger()
 	if triggerDisabledByT then return end
 	if os.clock() < triggerEnableTime then return end
@@ -835,7 +880,6 @@ local function tryTrigger()
 	end
 end
 
--- player connections
 Players.PlayerAdded:Connect(function(plr)
 	rebuildWhitelistPlayerList()
 	plr.CharacterAdded:Connect(function()
@@ -847,9 +891,7 @@ Players.PlayerRemoving:Connect(function()
 	rebuildWhitelistPlayerList()
 end)
 for _,plr in ipairs(Players:GetPlayers()) do
-	if plr.Character then
-		updateWhitelistForPlayer(plr)
-	end
+	if plr.Character then updateWhitelistForPlayer(plr) end
 	plr.CharacterAdded:Connect(function()
 		task.wait(0.2)
 		updateWhitelistForPlayer(plr)
@@ -859,7 +901,7 @@ rebuildWhitelistPlayerList()
 rebuildWhitelistedList()
 refreshUI()
 
--- main loop
+-- Main loop
 RunService.RenderStepped:Connect(function()
 	enforceSky()
 	if rightClickLock then
@@ -908,12 +950,10 @@ RunService.RenderStepped:Connect(function()
 	camera.CFrame = CFrame.new(camera.CFrame.Position, lockedPart.Position)
 	tryTrigger()
 end)
--- Initial scan
-instantGunCheck()
---// STAMINA LOOP (MERGED AT END)
-task.spawn(function()
-	local player = game:GetService("Players").LocalPlayer
 
+instantGunCheck()
+
+task.spawn(function()
 	while task.wait(0.2) do
 		pcall(function()
 			player.Character.StaminaController.StaminaDrain:FireServer(0)
